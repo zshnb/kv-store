@@ -1,0 +1,15 @@
+SET name a
+SET name b
+SET name a
+SET name b
+SET key1 1
+SET key2 2
+SET key3 3
+SET key1 1
+SET name abc
+SET key 1
+SET key 2
+SET name 1
+SET key2 2
+SET name 1
+SET nam 2
