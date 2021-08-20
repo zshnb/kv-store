@@ -3,15 +3,18 @@ package com.zshnb.kvstore
 import com.zshnb.kvstore.Command.*
 import org.apache.commons.io.input.ReversedLinesFileReader
 import java.io.*
+import java.lang.RuntimeException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.nio.file.*
-import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 
 class Store {
     private val map: MutableMap<String, Any> = mutableMapOf()
     private var reader: BufferedReader
+    private var inTransaction: Boolean = false
+    private val transactionId: Int = 0
+    private val unDoLogs = mutableListOf<UnDoLog>()
 
     init {
         val file = File("data.txt")
@@ -69,7 +72,8 @@ class Store {
 
     fun executeCommand(line: String) {
         val strings = line.split(" ")
-        when (Command.valueOf(strings[0])) {
+        val command = Command.valueOf(strings[0])
+        when (command) {
             GET -> {
                 if (strings.size != 2) {
                     println("invalid command")
@@ -84,9 +88,14 @@ class Store {
                 } else {
                     val key = strings[1]
                     val value = strings[2]
-                    executeSet(key, value)
-                    writeCommand(line)
-                    println("OK!")
+                    if (inTransaction) {
+                        val undoLog = generateUnDoLog(command, key, value)
+                        unDoLogs.add(undoLog)
+                    } else {
+                        executeSet(key, value)
+                        writeCommand(line)
+                        println("OK!")
+                    }
                 }
             }
             DEL -> {
@@ -98,6 +107,9 @@ class Store {
                     writeCommand(line)
                     println("OK!")
                 }
+            }
+            BEGIN -> {
+                inTransaction = true
             }
         }
     }
@@ -135,5 +147,21 @@ class Store {
     private fun readEndLine(): String {
         val reader = ReversedLinesFileReader(File("data.txt"), 4096, StandardCharsets.UTF_8)
         return reader.readLine()
+    }
+
+    private fun generateUnDoLog(command: Command, key: String, value: String): UnDoLog {
+        return when (command) {
+            SET -> {
+                if (map.containsKey(key)) {
+                    UnDoLog("SET $key ${map[key]}")
+                } else {
+                    UnDoLog("DEL $key")
+                }
+            }
+            DEL -> {
+                UnDoLog("SET $key $value")
+            }
+            else -> throw RuntimeException("$command not support")
+        }
     }
 }
