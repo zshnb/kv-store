@@ -4,5 +4,6 @@ enum class Command {
     GET,
     SET,
     DEL,
-    BEGIN
+    BEGIN,
+    ROLLBACK
 }

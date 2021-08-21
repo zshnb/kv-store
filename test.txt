@@ -1,0 +1,2 @@
+SET key 1
+DEL key

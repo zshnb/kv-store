@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.*
 import kotlin.concurrent.thread
 
-class Store {
+class Store(val dataFileName: String) {
     private val map: MutableMap<String, Any> = mutableMapOf()
     private var reader: BufferedReader
     private var inTransaction: Boolean = false
@@ -17,11 +17,11 @@ class Store {
     private val unDoLogs = mutableListOf<UnDoLog>()
 
     init {
-        val file = File("data.txt")
+        val file = File(dataFileName)
         if (!file.exists()) {
             file.createNewFile()
         }
-        reader = BufferedReader(InputStreamReader(FileInputStream("data.txt")))
+        reader = BufferedReader(InputStreamReader(FileInputStream(dataFileName)))
         reader.readLines().forEach {
             val strings = it.split(" ")
             when (Command.valueOf(strings[0])) {
@@ -47,22 +47,9 @@ class Store {
             while (true) {
                 val watchKey = watchService.take()
                 watchKey.pollEvents().forEach {
-                    if (it.context().toString().startsWith("data.txt")) {
+                    if (it.context().toString().startsWith(dataFileName)) {
                         val line = readEndLine()
-                        val strings = line.split(" ")
-                        when (Command.valueOf(strings[0])) {
-                            SET -> {
-                                val key = strings[1]
-                                val value = strings[2]
-                                executeSet(key, value)
-                            }
-                            DEL -> {
-                                val key = strings[1]
-                                executeDel(key)
-                            }
-                            else -> {
-                            }
-                        }
+                        executeCommandPurely(line)
                     }
                 }
                 watchKey.reset()
@@ -89,7 +76,7 @@ class Store {
                     val key = strings[1]
                     val value = strings[2]
                     if (inTransaction) {
-                        val undoLog = generateUnDoLog(command, key, value)
+                        val undoLog = generateUnDoLog(command, key)
                         unDoLogs.add(undoLog)
                     } else {
                         writeCommand(line)
@@ -114,17 +101,26 @@ class Store {
                 }
             }
             BEGIN -> {
+                if (inTransaction) {
+                    println("could not create nested transaction")
+                    return
+                }
                 inTransaction = true
+            }
+            ROLLBACK -> {
+                unDoLogs.forEach {
+                    executeCommandPurely(it.command)
+                }
             }
         }
     }
 
     private fun executeGet(key: String) {
         if (!map.containsKey(key)) {
-            println("key: $key not exist")
+            println("$key not exist")
         } else {
             val value = map.getValue(key)
-            println("value: $value")
+            println("$key: $value")
         }
     }
 
@@ -134,14 +130,14 @@ class Store {
 
     private fun executeDel(key: String) {
         if (!map.containsKey(key)) {
-            println("key: $key not exist")
+            println("$key not exist")
         } else {
             map.remove(key)
         }
     }
 
     private fun writeCommand(line: String) {
-        val channel = FileOutputStream("data.txt", true).channel
+        val channel = FileOutputStream(dataFileName, true).channel
         val fileLock = channel.lock()
         channel.position(channel.size())
         channel.write(ByteBuffer.wrap("$line\n".toByteArray()))
@@ -149,12 +145,29 @@ class Store {
         channel.close()
     }
 
+    private fun executeCommandPurely(line: String) {
+        val strings = line.split(" ")
+        when (Command.valueOf(strings[0])) {
+            SET -> {
+                val key = strings[1]
+                val value = strings[2]
+                executeSet(key, value)
+            }
+            DEL -> {
+                val key = strings[1]
+                executeDel(key)
+            }
+            else -> {
+            }
+        }
+    }
+
     private fun readEndLine(): String {
-        val reader = ReversedLinesFileReader(File("data.txt"), 4096, StandardCharsets.UTF_8)
+        val reader = ReversedLinesFileReader(File(dataFileName), 4096, StandardCharsets.UTF_8)
         return reader.readLine()
     }
 
-    private fun generateUnDoLog(command: Command, key: String, value: String = ""): UnDoLog {
+    private fun generateUnDoLog(command: Command, key: String): UnDoLog {
         return when (command) {
             SET -> {
                 if (map.containsKey(key)) {
