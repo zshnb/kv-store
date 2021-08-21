@@ -92,10 +92,10 @@ class Store {
                         val undoLog = generateUnDoLog(command, key, value)
                         unDoLogs.add(undoLog)
                     } else {
-                        executeSet(key, value)
                         writeCommand(line)
-                        println("OK!")
                     }
+                    executeSet(key, value)
+                    println("OK!")
                 }
             }
             DEL -> {
@@ -103,8 +103,13 @@ class Store {
                     println("invalid command")
                 } else {
                     val key = strings[1]
+                    if (inTransaction) {
+                        val undoLog = generateUnDoLog(command, key)
+                        unDoLogs.add(undoLog)
+                    } else {
+                        writeCommand(line)
+                    }
                     executeDel(key)
-                    writeCommand(line)
                     println("OK!")
                 }
             }
@@ -149,7 +154,7 @@ class Store {
         return reader.readLine()
     }
 
-    private fun generateUnDoLog(command: Command, key: String, value: String): UnDoLog {
+    private fun generateUnDoLog(command: Command, key: String, value: String = ""): UnDoLog {
         return when (command) {
             SET -> {
                 if (map.containsKey(key)) {
@@ -159,7 +164,7 @@ class Store {
                 }
             }
             DEL -> {
-                UnDoLog("SET $key $value")
+                UnDoLog("SET $key ${map[key]}")
             }
             else -> throw RuntimeException("$command not support")
         }
