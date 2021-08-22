@@ -18,3 +18,6 @@ DEL key
 SET key 1
 DEL key
 SET name 1
+SET name 5
+SET name 12
+DEL name

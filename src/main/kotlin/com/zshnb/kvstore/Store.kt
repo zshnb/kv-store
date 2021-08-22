@@ -30,22 +30,19 @@ class Store(private val dataFileName: String,
                 it.writeText("0")
             }
         }
+        reader = BufferedReader(FileReader(transactionIdFile))
+        transactionId = reader.readLine().toInt()
+        File("./").listFiles().filter { it.name.startsWith("$transactionFilePrefix-transaction-") && it.nameWithoutExtension.split("-").last().toInt() > transactionId }
+            .sortedBy { it.nameWithoutExtension.split("-").last().toInt() }
+            .forEach {
+                it.readLines().forEach { line -> executeCommandPurely(line) }
+                val writer = BufferedWriter(FileWriter(transactionIdFile))
+                writer.write((transactionId + 1).toString())
+            }
+
         reader = BufferedReader(InputStreamReader(FileInputStream(dataFileName)))
         reader.readLines().forEach {
-            val strings = it.split(" ")
-            when (Command.valueOf(strings[0])) {
-                SET -> {
-                    val key = strings[1]
-                    val value = strings[2]
-                    executeSet(key, value)
-                }
-                DEL -> {
-                    val key = strings[1]
-                    executeDel(key)
-                }
-                else -> {
-                }
-            }
+            executeCommandPurely(it)
         }
         reader.close()
         println("load data.")
