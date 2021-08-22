@@ -10,17 +10,21 @@ class MainTest {
     @BeforeEach
     fun setup() {
         file.delete()
-        File("./").listFiles().filter {
-            it.name.startsWith("test-transaction")
-        }.forEach { FileUtils.deleteQuietly(it) }
+        try {
+            File("./").listFiles().filter {
+                it.name.startsWith("test-transaction")
+            }.forEach { FileUtils.forceDelete(it) }
+        } catch (e: Exception) {}
         System.setOut(PrintStream(byteArrayOutputStream))
     }
 
     @AfterEach
     fun clear() {
-        File("./").listFiles().filter {
-            it.name.startsWith("test-transaction")
-        }.forEach { FileUtils.deleteQuietly(it) }
+        try {
+            File("./").listFiles().filter {
+                it.name.startsWith("test-transaction")
+            }.forEach { FileUtils.forceDelete(it) }
+        } catch (e: Exception) {}
     }
 
     @Test
