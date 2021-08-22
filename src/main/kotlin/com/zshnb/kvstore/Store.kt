@@ -3,23 +3,32 @@ package com.zshnb.kvstore
 import com.zshnb.kvstore.Command.*
 import org.apache.commons.io.input.ReversedLinesFileReader
 import java.io.*
-import java.lang.RuntimeException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.nio.file.*
 import kotlin.concurrent.thread
 
-class Store(val dataFileName: String) {
+class Store(private val dataFileName: String,
+            private val transactionFilePrefix: String = "") {
     private val map: MutableMap<String, Any> = mutableMapOf()
     private var reader: BufferedReader
     private var inTransaction: Boolean = false
-    private val transactionId: Int = 0
+    private var transactionId: Int = 0
     private val unDoLogs = mutableListOf<UnDoLog>()
+    private val reDoLogs = mutableListOf<ReDoLog>()
+    private val commitCommands = mutableListOf<String>()
+    private val transactionIdFile = "$transactionFilePrefix-transactionId.txt"
 
     init {
         val file = File(dataFileName)
         if (!file.exists()) {
             file.createNewFile()
+        }
+        File(transactionIdFile).let {
+            if (!it.exists()) {
+                it.createNewFile()
+                it.writeText("0")
+            }
         }
         reader = BufferedReader(InputStreamReader(FileInputStream(dataFileName)))
         reader.readLines().forEach {
@@ -73,11 +82,13 @@ class Store(val dataFileName: String) {
                 if (strings.size != 3) {
                     println("invalid command")
                 } else {
+                    commitCommands.add(line)
                     val key = strings[1]
                     val value = strings[2]
                     if (inTransaction) {
                         val undoLog = generateUnDoLog(command, key)
                         unDoLogs.add(undoLog)
+                        reDoLogs.add(ReDoLog(line))
                     } else {
                         writeCommand(line)
                     }
@@ -89,15 +100,21 @@ class Store(val dataFileName: String) {
                 if (strings.size != 2) {
                     println("invalid command")
                 } else {
+                    commitCommands.add(line)
                     val key = strings[1]
                     if (inTransaction) {
                         val undoLog = generateUnDoLog(command, key)
                         unDoLogs.add(undoLog)
+                        reDoLogs.add(ReDoLog(line))
                     } else {
                         writeCommand(line)
                     }
-                    executeDel(key)
-                    println("OK!")
+                    val result = executeDel(key)
+                    if (result) {
+                        println("OK!")
+                    } else {
+                        println("$key not exist")
+                    }
                 }
             }
             BEGIN -> {
@@ -105,12 +122,34 @@ class Store(val dataFileName: String) {
                     println("could not create nested transaction")
                     return
                 }
+                unDoLogs.clear()
+                reDoLogs.clear()
                 inTransaction = true
             }
             ROLLBACK -> {
+                if (!inTransaction) {
+                    println("no transaction opening")
+                    return
+                }
                 unDoLogs.forEach {
                     executeCommandPurely(it.command)
                 }
+            }
+            COMMIT -> {
+                if (!inTransaction) {
+                    println("no transaction opening")
+                    return
+                }
+                val reader = BufferedReader(FileReader(transactionIdFile))
+                transactionId = reader.readLine().toInt() + 1
+                writeReDoLogs()
+                if (commitCommands.isNotEmpty()) {
+                    writeCommand(commitCommands.joinToString(separator = System.lineSeparator()))
+                }
+                val writer = BufferedWriter(FileWriter(transactionIdFile))
+                writer.write(transactionId.toString())
+                writer.flush()
+                inTransaction = false
             }
         }
     }
@@ -128,11 +167,12 @@ class Store(val dataFileName: String) {
         map[key] = value
     }
 
-    private fun executeDel(key: String) {
-        if (!map.containsKey(key)) {
-            println("$key not exist")
+    private fun executeDel(key: String): Boolean {
+        return if (!map.containsKey(key)) {
+            false
         } else {
             map.remove(key)
+            true
         }
     }
 
@@ -143,6 +183,17 @@ class Store(val dataFileName: String) {
         channel.write(ByteBuffer.wrap("$line\n".toByteArray()))
         fileLock.release()
         channel.close()
+    }
+
+    private fun writeReDoLogs() {
+        val reDoLogfile = File("${transactionFilePrefix}-transaction-$transactionId.txt")
+        if (!reDoLogfile.exists()) {
+            reDoLogfile.createNewFile()
+        }
+        val bufferedWriter = BufferedWriter(FileWriter(reDoLogfile))
+        val reDoLogContent = reDoLogs.joinToString(separator = System.lineSeparator()) { it.command }
+        bufferedWriter.write(reDoLogContent)
+        bufferedWriter.flush()
     }
 
     private fun executeCommandPurely(line: String) {

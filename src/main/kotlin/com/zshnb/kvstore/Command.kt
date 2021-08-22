@@ -5,5 +5,6 @@ enum class Command {
     SET,
     DEL,
     BEGIN,
-    ROLLBACK
+    ROLLBACK,
+    COMMIT
 }

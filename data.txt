@@ -13,3 +13,8 @@ SET name 1
 SET key2 2
 SET name 1
 SET nam 2
+SET key 1
+DEL key
+SET key 1
+DEL key
+SET name 1
