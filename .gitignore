@@ -97,4 +97,4 @@ fabric.properties
 hs_err_pid*
 .gradle
 build
-
+*.txt
